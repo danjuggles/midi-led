@@ -1,0 +1,110 @@
+<html>
+    <head>
+        <style>
+            body {font-family: Arial, Helvetica, sans-serif; padding:30px; background-color: #1e1e1e; color: #ddd; display: flex; align-items: center; justify-content: center; flex-direction: column;}
+            h1 {color: #f4645f; font-size: xx-large;}
+            h2 {color: #f4645f; font-size: xx-large;}
+            form[type=button] {margin-bottom:20px; width: 80%; display: flex; align-items: center; justify-content: center; flex-direction: row; flex-flow: row wrap;}
+            form[type=slider] {margin-bottom:10px; width: 100%; display: flex; align-items: left; justify-content: center; flex-direction: column;}
+            input[type=submit] {background-color: #f4645f; border: none; border-radius: 15px; color: white; padding: 20px 40px; text-align: center; text-decoration: none; font-size: 20px; margin: 4px 2px; cursor: pointer;}
+            .active {background-color: #2d2d2d !important;}
+            label { width: 100%;}
+            input[type=range] {width: 100%; height: 50px;}
+            .slider {
+                width: 100%; 
+                height: 100%; 
+                appearance: none; 
+                outline: none; 
+                opacity: 0.7;
+                transition: opacity .2s;
+                background-color: #1e1e1e;
+            }
+            
+            .slider:hover {
+                opacity: 1;
+            }
+            
+            .slider::-webkit-slider-thumb {
+                appearance: none;
+                width: 20px;
+                height: 20px;
+                background: #f4645f;
+                cursor: pointer;
+                border-radius: 100%;
+            }
+            
+            .slider::-moz-range-thumb {
+                width: 20px;
+                height: 20px;
+                background: #f4645f;
+                cursor: pointer;
+                border-radius: 100%;    
+            }
+            
+            .slider::-webkit-slider-runnable-track {
+                width: 100%;
+                height: 10px;
+                cursor: pointer;
+                background: #ddd;
+                border-radius: 5px;
+            }
+            
+            .slider::-moz-range-track {
+                width: 100%;
+                height: 10px;
+                cursor: pointer;
+                background: #ddd;
+                border-radius: 5px;
+            }
+        </style>
+        <script>
+            function updateBrightness(value) {
+              var xhr = new XMLHttpRequest();
+              xhr.open('POST', '/brightness', true);
+              xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+              xhr.send('brightness=' + encodeURIComponent(value));
+            }
+            function updateRainbowRate(value) {
+              var xhr = new XMLHttpRequest();
+              xhr.open('POST', '/rainbow_rate', true);
+              xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+              xhr.send('rainbow_rate=' + encodeURIComponent(value));
+            }
+            function updateStaticColor(value) {
+              var xhr = new XMLHttpRequest();
+              xhr.open('POST', '/color', true);
+              xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+              xhr.send('color=' + encodeURIComponent(value));
+            }
+        </script>
+    </head>
+    <body>
+        <h1>LED Piano Control Panel</h1>
+        <form type="button" action="/inputSource" method="POST">
+            <input type="submit" class="active" name="MIDI" value="MIDI">
+            <input type="submit" class="active" name="Random" value="Random">
+            <input type="submit" class="active" name="Solid" value="Solid">
+        </form>
+        <h2>Effects</h2>
+        <form type="button" action="/mode" method="POST">
+            <input type="submit" class="active" name="mode" value="Static Rainbow">
+            <input type="submit" class="active" name="mode" value="Moving Rainbow">
+            <input type="submit" class="active" name="mode" value="Random">
+            <input type="submit" class="active" name="mode" value="Colour Cycle">
+            <input type="submit" class="active" name="mode" value="Static Colour">
+        </form>
+        <h2>Settings</h2>
+        <form type="slider" id="rainbowForm">
+            <label for="rainbow_rate">Rainbow Rate:</label><br>
+            <input type="range" id="rainbow_rate" name="rainbow_rate" min="0" max="100" value="50" class="slider" oninput="updateRainbowRate(this.value)">
+        </form>
+        <form type="slider" id="colorForm">
+            <label for="color">Colour:</label><br>
+            <input type="range" id="color" name="color" min="0" max="255" value="0" class="slider" oninput="updateStaticColor(this.value)">
+        </form>
+        <form type="slider">
+            <label for="brightness">Brightness:</label><br>
+            <input type="range" id="brightness" name="brightness" min="0" max="255" value="128" class="slider" oninput="updateBrightness(this.value)">
+        </form>
+    </body>
+</html>
