@@ -11,153 +11,210 @@ const char* password = "Smashthepatriarchy1";
 
 AsyncWebServer server(80);
 
-// MIDI_CREATE_INSTANCE(HardwareSerial, Serial, MIDI);
 MIDI_CREATE_DEFAULT_INSTANCE();
 
-int lastTime;
+int lastTime = 0;
 bool pressed = true;
 
-const uint16_t PixelCount = 144; // make sure to set this to the number of pixels in your strip
+// const uint16_t PixelCount = 144; // make sure to set this to the number of pixels in your strip
+#define numberOfKeys 88
 
 #define DATA_PIN 2
 #define NUM_LEDS 144
 CRGB leds[NUM_LEDS];
+CRGB leds_temp[numberOfKeys];
 
-#define numberOfKeys 144
+
+#define startNote 21 // the decimal value of the 1st note
+
+
 float note_values[numberOfKeys];
 float decay_array[numberOfKeys];
+int ledSums[numberOfKeys];
+int ledLayout[numberOfKeys];
+
+#define w 2 // white
+#define b 1 // black
+#define numberOfOctaves 8
+#define numberOfnotesInOctave 12
+int key_layout[numberOfnotesInOctave * numberOfOctaves] = {w,b,w,b,w,w,b,w,b,w,b,w,w,b,w,b,w,w,b,w,b,w,b,w,w,b,w,b,w,w,b,w,b,w,b,w,w,b,w,b,w,w,b,w,b,w,b,w,w,b,w,b,w,w,b,w,b,w,b,w,w,b,w,b,w,w,b,w,b,w,b,w,w,b,w,b,w,w,b,w,b,w,b,w,w,b,w,b,w,w,b,w,b,w,b,w};
+
 float decay_rate;
 float decay_rate_slow = 0.999;
 float decay_rate_fast = 0.9;
-float decay_cutoff = 10;
+float decay_cutoff = 30;
 int hue;
 long unsigned int update_rate = 100;
 int effect_mode = 1;
 int inputSource = 2;
+int inputSource_prev = 2;
 int LED_offset = 0;
 int static_color = 0;
 uint8_t gHue = 0;
-bool holding_pattern = true;
-long unsigned int move_rate = 10;
+long unsigned int total_keys_pressed = 0;
+int move_rate = 128;
+int counter = 0;
 
-int max_brightness = 128;
+float max_brightness = 255.0;
+float brightness_scaler = 1.0;
 
+int precomputedHues[numberOfKeys];
 //------------------------------------------------------------------------
 
-// Function to update LEDs based on decay array
-void updateLEDs() {
+void setupKeyLayout() {
+  // now set up arrays for the notes we care about
+  int sum = 1;
   for (int i = 0; i < numberOfKeys; i++) {
-    float x = decay_array[i];
-    if (x < decay_cutoff) { decay_array[i] = 0.0; }
-    else { decay_array[i] = x * decay_rate; }
-    // int v = round(decay_array[i] * (float)max_brightness);
-    int v = round(decay_array[i]);
-    // leds[i] = CRGB(v, 0, 0);
-    leds[i] = CHSV(0, 255, v);
+      int noteIndex = (startNote + i) % (numberOfnotesInOctave * numberOfOctaves);
+      // add led count at this index to the running sum
+      ledSums[i] += sum;
+      sum += key_layout[noteIndex];
+      // capture how many LEDs are at this index
+      ledLayout[i] = key_layout[noteIndex];
+  }
+}
+
+void setLEDsToPianoLayout() {
+  for(int i = 0; i < numberOfKeys; i++) {
+    int x = ledLayout[i];
+    int y = ledSums[i];
+
+    leds[y] = leds_temp[i];
+    if(x == w) {
+      leds[y+1] = leds_temp[i];
+    }
   }
   FastLED.show();
 }
 
-// Function to update LEDs based on decay array
+void precomputeHues() {
+  for (int i = 0; i < numberOfKeys; i++) {
+    precomputedHues[i] = round(map(i, 0, numberOfKeys, 0, 255));
+    // Serial.print(precomputedHues[i]);
+  }
+  // Serial.println("Complete");
+}
+
+void decayNoteValue(int i) {
+  if (note_values[i] < decay_cutoff) { note_values[i] = 0.0; }
+  else { note_values[i] = note_values[i] * decay_array[i]; }
+}
+
+void updateLEDs(int i, int hue) {
+  int v = round(note_values[i]);
+  leds_temp[i] = CHSV(hue, 255, v);
+}
+
+void clearStrip() {
+  for(int i = 0; i < numberOfKeys; ++i) {
+    hue = 0;
+    decay_array[i] = 0.0;
+    updateLEDs(i, hue);
+  }
+  inputSource_prev = inputSource;
+}
+
+// void updateLEDs() {
+//   for (int i = 0; i < numberOfKeys; i++) {
+//     decayNoteValue(i);
+//     updateLEDs(i, 0);
+//   }
+//   FastLED.show();
+// }
+
 void updateLEDs_colourCycle() {
-  if (millis() - lastTime > move_rate) {
-    lastTime = millis();
-    hue = (hue + 1) % 256;
+  if (counter > move_rate) {
+    counter = 0;
+  } else {
+    ++counter;
+  }
+
+  if (hue > 255) {
+    hue = 0;
+  }
+  else if (counter == 0) {
+    ++hue;
   }
 
   for (int i = 0; i < numberOfKeys; i++) {
-    // float x = decay_array[i];
-    if (note_values[i] < decay_cutoff) { note_values[i] = 0.0; }
-    else { note_values[i] = note_values[i] * decay_array[i]; }
-    // int v = round(decay_array[i] * (float)max_brightness);
-    int v = round(note_values[i]);
-    // leds[i] = CRGB(v, 0, 0);
-    leds[i] = CHSV(hue, 255, v);
+    decayNoteValue(i);
+    updateLEDs(i, hue);
   }
-  FastLED.show();
+  // FastLED.show();
+  setLEDsToPianoLayout();
 }
 
-// Function to update LEDs based on decay array
-void updateLEDs_random() {
-  // if (millis() - lastTime > update_rate) {
-  //   lastTime = millis();
-    hue = random(0,255);
-  // }
-
+void updateLEDs_incremental() {
   for (int i = 0; i < numberOfKeys; i++) {
-    // float x = decay_array[i];
-    if (note_values[i] < decay_cutoff) { note_values[i] = 0.0; }
-    else { note_values[i] = note_values[i] * decay_array[i]; }
-    // int v = round(decay_array[i] * (float)max_brightness);
-    int v = round(note_values[i]);
-    // leds[i] = CRGB(v, 0, 0);
-    leds[i] = CHSV(hue, 255, v);
+    if (decay_array[i] == decay_rate_slow) { // check to see what notes are pressed
+      hue = total_keys_pressed % 255;
+    }
+    decayNoteValue(i);
+    updateLEDs(i, hue);
   }
-  FastLED.show();
+  // FastLED.show();
+  setLEDsToPianoLayout();
 }
 
-// Function to update LEDs based on decay array
 void updateLEDs_staticRainbow() {
-  // if (millis() - lastTime > update_rate) {
-  //   lastTime = millis();
-  //   hue = (hue + 1) % 256;
-  // }
-
   for (int i = 0; i < numberOfKeys; i++) {
-    hue = map(i, 0, numberOfKeys, 0, 255);
-    if (note_values[i] < decay_cutoff) { note_values[i] = 0.0; }
-    else { note_values[i] = note_values[i] * decay_array[i]; }
-    int v = round(note_values[i]);
-    leds[i] = CHSV(hue, 255, v);
+    hue = precomputedHues[i];
+    decayNoteValue(i);
+    updateLEDs(i, hue);
   }
-  FastLED.show();
+  // FastLED.show();
+  setLEDsToPianoLayout();
 }
 
-// Function to update LEDs based on decay array
 void updateLEDs_movingRainbow() {
-  if (millis() - lastTime > move_rate) {
-    lastTime = millis();
-    LED_offset = (LED_offset + 1);
+  if (counter > move_rate) {
+    counter = 0;
+  } else {
+    ++counter;
+  }
+
+  if (LED_offset > numberOfKeys) {
+    LED_offset = 0;
+  }
+  else if (counter == 0) {
+    ++LED_offset;
   }
 
   for (int i = 0; i < numberOfKeys; i++) {
-    hue = (map(i, 0, numberOfKeys, 0, 255) + LED_offset) % 255;
-    if (note_values[i] < decay_cutoff) { note_values[i] = 0.0; }
-    else { note_values[i] = note_values[i] * decay_array[i]; }
-    int v = round(note_values[i]);
-    leds[i] = CHSV(hue, 255, v);
+    int x = (i + LED_offset) % numberOfKeys;
+    hue = precomputedHues[x];
+    decayNoteValue(i);
+    updateLEDs(i, hue);
   }
-  FastLED.show();
+  // FastLED.show();
+  setLEDsToPianoLayout();
 }
 
-// Function to update LEDs based on decay array
 void updateLEDs_staticColor() {
-  if (millis() - lastTime > move_rate) {
-    lastTime = millis();
-    // LED_offset = (LED_offset + 1);
-  }
-
   for (int i = 0; i < numberOfKeys; i++) {
-    // hue = (map(i, 0, numberOfKeys, 0, 255) + LED_offset) % 255;
-    if (note_values[i] < decay_cutoff) { note_values[i] = 0.0; }
-    else { note_values[i] = note_values[i] * decay_array[i]; }
-    int v = round(note_values[i]);
-    leds[i] = CHSV(static_color, 255, v);
+    decayNoteValue(i);
+    updateLEDs(i, static_color);
   }
-  FastLED.show();
+  // FastLED.show();
+  setLEDsToPianoLayout();
 }
 
 //------------------------------------------------------------------------
+int setBrightness(float velocity) {
+  return map(velocity, 0, 127, 0, max_brightness);
+}
 
 void handleNoteOn(byte channel, byte pitch, byte velocity)
 {
   // handy for debugging
   // MIDI.sendNoteOn(pitch, velocity, channel);
 
-  holding_pattern = false;
+  total_keys_pressed++;
 
-  decay_array[pitch] = decay_rate_slow;
-  note_values[pitch] = (float)velocity * 2.0;
+  int note = pitch - startNote;
+
+  decay_array[note] = decay_rate_slow;
+  note_values[note] = setBrightness((float)velocity); //(float)velocity * brightness_scaler;
 }
 
 void handleNoteOff(byte channel, byte pitch, byte velocity)
@@ -165,22 +222,34 @@ void handleNoteOff(byte channel, byte pitch, byte velocity)
   // handy for debugging
   // MIDI.sendNoteOff(pitch, velocity, channel);
 
-  decay_array[pitch] = decay_rate_fast;
+  int note = pitch - startNote;
+
+  decay_array[note] = decay_rate_fast;
 
 }
 
 void fake_MIDI() {
-  int randomVelocity = random(128);
-  int randomPitch = random(144);
+  int randomVelocity = random(decay_cutoff, 128);
+  int randomPitch = random(numberOfKeys);
   long unsigned int randomKeyPressRate = random(250);
 
   if (millis() - lastTime > randomKeyPressRate) {
     lastTime = millis();
     decay_array[randomPitch] = decay_rate_slow;
-    float x = map((float)randomVelocity, 0, 127, 0, max_brightness);
-    note_values[randomPitch] = x;
+    // float x = map((float)randomVelocity, 0, 127, 0, max_brightness);
+    // note_values[randomPitch] = x;
+    note_values[randomPitch] = setBrightness((float)randomVelocity);  //(float)randomVelocity * brightness_scaler;
+
+    total_keys_pressed++;
   }
 
+}
+
+void solid() {
+  for(int i = 0; i < numberOfKeys; ++i) {
+    note_values[i] = setBrightness(127.0);
+    decay_array[i] = 1.0;
+  }
 }
 
 //------------------------------------------------------------------------
@@ -203,7 +272,12 @@ void test_MIDIoutput() {
 
 void setup() {
 
+  precomputeHues();
+  setupKeyLayout();
+
   FastLED.addLeds<NEOPIXEL, DATA_PIN>(leds, NUM_LEDS);
+
+  Serial.begin(115200);
 
   // Connect the handleNoteOn function to the library,
   // so it is called upon reception of a NoteOn.
@@ -227,9 +301,9 @@ void setup() {
     String css = "<style>";
     css += "body {font-family: Arial, Helvetica, sans-serif; padding:30px; background-color: #1e1e1e; color: #ddd; display: flex; align-items: center; justify-content: center; flex-direction: column;}";
     css += "h1, h2 {color: #f4645f; font-size: xx-large;}"; // h2 added
-    css += "form[type=button] {margin-bottom:20px; width: 80%; display: flex; align-items: center; justify-content: center; flex-direction: row; flex-flow: row wrap;}"; // form updated
-    css += "form[type=slider] {margin-bottom:10px; width: 100%; display: flex; align-items: left; justify-content: center; flex-direction: column;}"; // form updated
-    css += "input[type=submit] {background-color: #f4645f; border: none; border-radius: 15px; color: white; padding: 20px 40px; text-align: center; text-decoration: none; font-size: 20px; margin: 4px 2px; cursor: pointer;}";
+    css += "form[type=button] {margin: 20px; height: 300px; width: 100%; display: flex; align-items: center; justify-content: center; flex-wrap: wrap;}";
+    css += "input[type=submit] {background-color: #f4645f; flex: 1 1 0; border: none; border-radius: 15px; color: white; padding: 60px; text-align: center; text-decoration: none; font-size: 20px; margin: 4px 2px; cursor: pointer;}";
+    css += "form[type=slider] {margin-bottom:10px; width: 100%; display: flex; align-items: left; justify-content: center; flex-direction: column;}";
     css += ".active {background-color: #2d2d2d !important;}";
     css += "label { width: 100%;}";
     css += "input[type=range] {width: 100%; height: 50px;}";
@@ -259,11 +333,17 @@ void setup() {
     css += "  xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');";
     css += "  xhr.send('color=' + encodeURIComponent(value));";
     css += "}";
+    css += "setInterval(function(){";
+    css += "  fetch('/live_variable').then(response => response.text()).then(data => {";
+    css += "    document.getElementById('liveVar').innerText = 'Keys Pressed: ' + data;";
+    css += "  });";
+    css += "}, 100);"; // Fetch every 1 second
     css += "</script>";
     css += "</style></head>";
         
     String body = "<body>";
     body += "<h1>LED Piano Control Panel</h1>";
+    body += "<p id='liveVar'>Keys Pressed: </p>";
 
     String form0 = "<form type=\"button\" action=\"/ipSource\" method=\"POST\">";
     form0 += "<input type=\"submit\" class=\""+ String(inputSource == 1?"active":"") +"\" name=\"ipSource\" value=\"MIDI\">";
@@ -277,7 +357,7 @@ void setup() {
     String form1 = "<form type=\"button\" action=\"/mode\" method=\"POST\">";
     form1 += "<input type=\"submit\" class=\""+ String(effect_mode == 1?"active":"") +"\" name=\"mode\" value=\"Static Rainbow\">";
     form1 += "<input type=\"submit\" class=\""+ String(effect_mode == 2?"active":"") +"\" name=\"mode\" value=\"Moving Rainbow\">";
-    form1 += "<input type=\"submit\" class=\""+ String(effect_mode == 3?"active":"") +"\" name=\"mode\" value=\"Random\">";
+    form1 += "<input type=\"submit\" class=\""+ String(effect_mode == 3?"active":"") +"\" name=\"mode\" value=\"Incremental\">";
     form1 += "<input type=\"submit\" class=\""+ String(effect_mode == 4?"active":"") +"\" name=\"mode\" value=\"Colour Cycle\">";
     form1 += "<input type=\"submit\" class=\""+ String(effect_mode == 5?"active":"") +"\" name=\"mode\" value=\"Static Colour\">";
     form1 += "</form>";
@@ -287,7 +367,7 @@ void setup() {
 
     String formRainbow = "<form type=\"slider\" id=\"rainbowForm\">";
     formRainbow += "<label for=\"effect_speed\">Efect Speed:</label><br>";
-    formRainbow += "<input type=\"range\" id=\"effect_speed\" name=\"effect_speed\" min=\"0\" max=\"100\" value=\"50\" class=\"slider\" oninput=\"updateEffectSpeed(this.value)\">";
+    formRainbow += "<input type=\"range\" id=\"effect_speed\" name=\"effect_speed\" min=\"0\" max=\"255\" value=\"128\" class=\"slider\" oninput=\"updateEffectSpeed(this.value)\">";
     formRainbow += "</form>";
 
     String formDecayRate = "<form type=\"slider\" id=\"decayForm\" action=\"/decay_rate\" method=\"POST\">";
@@ -305,9 +385,9 @@ void setup() {
     formBrightness += "<label for=\"brightness\">Brightness:</label><br>";
     formBrightness += "<input type=\"range\" id=\"brightness\" name=\"brightness\" min=\"0\" max=\"255\" value=\"128\" class=\"slider\" oninput=\"updateBrightness(this.value)\">";
     formBrightness += "</form>";
-    
+
     String html_end = "</body></html>";
-    
+
     String html = html_head + css + body + form0 + section0 + form1 + section1 + formBrightness + formColor + formRainbow + html_end;
     request->send(200, "text/html", html);
 });
@@ -322,6 +402,7 @@ server.on("/ipSource", HTTP_POST, [](AsyncWebServerRequest *request){
       } else if(ipSource == "Solid") {
         inputSource = 3;
       }
+      
     }
     request->redirect("/");
 });
@@ -335,7 +416,7 @@ server.on("/mode", HTTP_POST, [](AsyncWebServerRequest *request){
       } else if(mode == "Moving Rainbow") {
         // Set Mode 2
         effect_mode = 2;
-      } else if(mode == "Random") {
+      } else if(mode == "Incremental") {
         // Set Mode 3
         effect_mode = 3;
       } else if(mode == "Colour Cycle") {
@@ -374,10 +455,9 @@ server.on("/mode", HTTP_POST, [](AsyncWebServerRequest *request){
   server.on("/brightness", HTTP_POST, [](AsyncWebServerRequest *request) {
     if (request->hasParam("brightness", true)) {
       AsyncWebParameter* p = request->getParam("brightness", true);
-      int brightness = p->value().toInt();
+      max_brightness = p->value().toFloat();
       // Use the brightness value to set your LED brightness. This depends on your LED setup.
       // setBrightness(brightness);
-      max_brightness = brightness;
     }
     request->redirect("/"); // Redirect back to the home page after setting the brightness
 });
@@ -388,9 +468,13 @@ server.on("/mode", HTTP_POST, [](AsyncWebServerRequest *request){
       int effect_speed = p->value().toInt();
       // Use the brightness value to set your LED brightness. This depends on your LED setup.
       // setBrightness(brightness);
-      move_rate = 100 - effect_speed;
+      move_rate = 255 - effect_speed;
     }
     request->redirect("/"); // Redirect back to the home page after setting the rainbow rate
+});
+
+  server.on("/live_variable", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send(200, "text/plain", String(total_keys_pressed));
 });
 
   // Start the server
@@ -409,10 +493,15 @@ void loop() {
     fake_MIDI();
     break;
   case 3:
-    // just turn all pixels on
+    solid();
     break;
   default:
+    fake_MIDI();
     break;
+  }
+
+  if (inputSource != inputSource_prev) {
+    clearStrip();
   }
 
   switch(effect_mode) {
@@ -423,7 +512,7 @@ void loop() {
       updateLEDs_movingRainbow();
       break;
     case 3:
-      updateLEDs_random();
+      updateLEDs_incremental();
       break;
     case 4:
       updateLEDs_colourCycle();
